@@ -1,13 +1,17 @@
 package com.jayant.post_Service.service;
 
+import com.jayant.post_Service.auth.UserContextHolder;
+import com.jayant.post_Service.clients.ConnectionsClient;
 import com.jayant.post_Service.dto.PostCreateRequestDto;
 import com.jayant.post_Service.dto.PostDto;
 import com.jayant.post_Service.entity.Post;
+import com.jayant.post_Service.event.PostCreatedEvent;
 import com.jayant.post_Service.exception.ResourceNotFoundException;
 import com.jayant.post_Service.repository.PostsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -16,14 +20,29 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+
 public class PostsService {
     private final PostsRepository postsRepository;
     private final ModelMapper modelMapper;
-    public PostDto createPost(PostCreateRequestDto postDto, Long userId) {
+    private final ConnectionsClient connectionsClient;
+
+    private final KafkaTemplate<Long, PostCreatedEvent> kafkaTemplate;
+
+    public PostDto createPost(PostCreateRequestDto postDto) {
+        Long userId = UserContextHolder.getCurrentUserId();
         Post post = modelMapper.map(postDto, Post.class);
         post.setUserId(userId);
 
         Post savedPost = postsRepository.save(post);
+
+        PostCreatedEvent postCreatedEvent = PostCreatedEvent.builder()
+                .postId(savedPost.getId())
+                .creatorId(userId)
+                .content(savedPost.getContent())
+                .build();
+
+        kafkaTemplate.send("post-created-topic", postCreatedEvent);
+
         return modelMapper.map(savedPost, PostDto.class);
     }
 

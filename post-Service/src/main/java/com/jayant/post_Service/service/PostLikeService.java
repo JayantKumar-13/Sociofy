@@ -1,12 +1,16 @@
 package com.jayant.post_Service.service;
 
+import com.jayant.post_Service.auth.UserContextHolder;
+import com.jayant.post_Service.entity.Post;
 import com.jayant.post_Service.entity.PostLike;
+import com.jayant.post_Service.event.PostLikedEvent;
 import com.jayant.post_Service.exception.BadRequestException;
 import com.jayant.post_Service.exception.ResourceNotFoundException;
 import com.jayant.post_Service.repository.PostLikeRepository;
 import com.jayant.post_Service.repository.PostsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -16,11 +20,13 @@ public class PostLikeService {
 
     private final PostLikeRepository postLikeRepository;
     private final PostsRepository postsRepository;
+    private final KafkaTemplate<Long, PostLikedEvent> kafkaTemplate;
 
-    public void likePost(Long postId, Long userId) {
+    public void likePost(Long postId) {
+        Long userId = UserContextHolder.getCurrentUserId();
         log.info("Attempting to like the post with id: {}", postId);
-        boolean exists = postsRepository.existsById(postId);
-        if(!exists) throw new ResourceNotFoundException("Post not found with id: "+postId);
+        Post post = postsRepository.findById(postId).orElseThrow(
+                () -> new ResourceNotFoundException("Post not found with id: "+postId));
 
         boolean alreadyLiked = postLikeRepository.existsByUserIdAndPostId(userId, postId);
         if(alreadyLiked) throw new BadRequestException("Cannot like the same post again.");
@@ -30,9 +36,17 @@ public class PostLikeService {
         postLike.setUserId(userId);
         postLikeRepository.save(postLike);
         log.info("Post with id: {} liked successfully", postId);
+
+        PostLikedEvent postLikedEvent = PostLikedEvent.builder()
+                .postId(postId)
+                .likedByUserId(userId)
+                .creatorId(post.getUserId()).build();
+
+        kafkaTemplate.send("post-liked-topic", postId, postLikedEvent);  // Here key is postId taaki ek post ke likes ek saath dikhe
     }
 
-    public void unlikePost(Long postId, Long userId) {
+    public void unlikePost(Long postId) {
+        Long userId = UserContextHolder.getCurrentUserId();
         log.info("Attempting to unlike the post with id: {}", postId);
         boolean exists = postsRepository.existsById(postId);
         if(!exists) throw new ResourceNotFoundException("Post not found with id: "+postId);

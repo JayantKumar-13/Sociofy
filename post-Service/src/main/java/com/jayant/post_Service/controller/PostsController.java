@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/posts")
+@RequestMapping("/core")
 @RequiredArgsConstructor
 public class PostsController {
 
@@ -20,7 +20,7 @@ public class PostsController {
 
     @PostMapping
     public ResponseEntity<PostDto> createPost(@RequestBody PostCreateRequestDto postDto, HttpServletRequest httpServletRequest) {
-        PostDto createdPost = postsService.createPost(postDto, 1L);
+        PostDto createdPost = postsService.createPost(postDto);
         return new ResponseEntity<>(createdPost, HttpStatus.CREATED);
     }
 
