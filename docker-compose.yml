@@ -1,0 +1,155 @@
+services:
+  kafka:
+    image: apache/kafka:3.8.1
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    networks:
+      - sociofy-network
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  notification-db:
+    image: postgres:16
+    container_name: notification-db
+    environment:
+      POSTGRES_DB: notificationDB
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: "0000"
+    ports:
+      - "5432:5432"
+    networks:
+      - sociofy-network
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+
+  posts-db:
+    image: postgres:16
+    container_name: posts-db
+    environment:
+      POSTGRES_DB: postsDB
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: "0000"
+    ports:
+      - "5433:5432"
+    networks:
+      - sociofy-network
+    volumes:
+      - posts-db-data:/var/lib/postgresql/data
+
+  user-db:
+    image: postgres:16
+    container_name: user-db
+    environment:
+      POSTGRES_DB: userDB
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: "0000"
+    ports:
+      - "5434:5432"
+    networks:
+      - sociofy-network
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+
+  connections-db:
+    image: neo4j
+    container_name: connections-db
+    environment:
+      NEO4J_AUTH: neo4j/password
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - connections-db-data:/data
+    networks:
+      - sociofy-network
+
+  discovery-server:
+    image: jayant1303/sociofy/discovery-server
+    container_name: discovery-server
+    ports:
+      - "8761:8761"
+    networks:
+      - sociofy-network
+
+  posts-service:
+    image: jayant1303/sociofy/post-service
+    container_name: posts-service
+    depends_on:
+      - discovery-server
+      - posts-db
+      - kafka
+    networks:
+      - sociofy-network
+
+  user-service:
+    image: jayant1303/sociofy/user-service
+    container_name: users-service
+    depends_on:
+      - discovery-server
+      - user-db
+      - kafka
+    networks:
+      - sociofy-network
+
+  notification-service:
+    image: jayant1303/sociofy/notification-service
+    container_name: notification-service
+    depends_on:
+      - kafka
+      - notification-db
+      - discovery-server
+    networks:
+      - sociofy-network
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notificationDB
+      SPRING_DATASOURCE_USERNAME: user
+      SPRING_DATASOURCE_PASSWORD: "0000"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+
+  connections-service:
+    image: jayant1303/sociofy/connections-service
+    container_name: connections-service
+    depends_on:
+      - kafka
+      - connections-db
+      - discovery-server
+    networks:
+      - sociofy-network
+
+  api-gateway:
+    image: jayant1303/sociofy/api-gateway
+    container_name: api-gateway
+    depends_on:
+      - discovery-server
+      - posts-service
+      - user-service
+      - notification-service
+      - connections-service
+    ports:
+      - "8083:8083"
+    networks:
+      - sociofy-network
+
+networks:
+  sociofy-network:
+    driver: bridge
+
+volumes:
+  kafka_data:
+  notification-db-data:
+  posts-db-data:
+  user-db-data:
+  connections-db-data:
