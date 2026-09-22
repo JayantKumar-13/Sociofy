@@ -507,11 +507,8 @@ or TestContainers/mocks.
 
 # 📌 Current Development Notes
 
-> These are known configuration mismatches in the current repository.
-
-- Neo4j password in `docker-compose.yml` and `connections-service` should be identical.
-- Notification service database credentials should match Docker Compose configuration.
-- Feign client path for first-degree connections should match the controller mapping.
+- Neo4j and notification database credentials are configured consistently between Docker Compose and their services.
+- Feign clients use the connections controller mapping `/core/{userId}/first-degree`.
 - JWT secrets and database passwords should be moved to environment variables for production deployments.
 - Kafka is configured as a single broker for local development.
 
