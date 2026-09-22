@@ -1,306 +1,535 @@
-# Sociofy
+# 🌐 Sociofy
 
-Sociofy is a backend for a social networking application. Users can create accounts, log in, publish posts, like posts, and build connections with other users. The system also creates notifications when relevant social activity occurs.
+<p align="center">
+  <b>A scalable backend for a social networking application built using Spring Boot Microservices.</b>
+</p>
 
-The project is implemented as a small microservices system. Each service owns one business capability and its own data store. Services communicate in two ways:
+<p align="center">
+  <img src="https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk"/>
+  <img src="https://img.shields.io/badge/Spring_Boot-Microservices-6DB33F?style=for-the-badge&logo=springboot"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-16-blue?style=for-the-badge&logo=postgresql"/>
+  <img src="https://img.shields.io/badge/Neo4j-Graph_Database-008CC1?style=for-the-badge&logo=neo4j"/>
+  <img src="https://img.shields.io/badge/Apache_Kafka-Event_Driven-black?style=for-the-badge&logo=apachekafka"/>
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker"/>
+</p>
 
-- **Synchronous REST calls** for actions that need an immediate response, such as login or creating a connection request.
-- **Asynchronous Kafka events** for side effects, such as creating notifications after a post or connection action.
+---
 
-## What the application does
+## 📖 Overview
 
-A typical Sociofy user can:
+**Sociofy** is the backend of a social networking platform where users can:
 
-1. Sign up and receive a user account.
-2. Log in and receive a JWT access token.
-3. Use the token to create and view posts.
-4. Like or unlike posts.
-5. Send, accept, or reject connection requests.
-6. Receive notifications when connections create posts, posts are liked, or connection requests change state.
+- 👤 Create accounts and authenticate with JWT.
+- 📝 Publish posts.
+- ❤️ Like and unlike posts.
+- 🤝 Send, accept, and reject connection requests.
+- 🔔 Receive notifications for social activity.
 
-## High-level architecture
+The application follows a **Microservices Architecture** where each service owns its own business capability and database.
+
+Communication happens through:
+
+- **Synchronous REST APIs** (immediate responses)
+- **Asynchronous Kafka Events** (notifications and side effects)
+
+---
+
+# 🏗️ High-Level Architecture
 
 ```mermaid
 flowchart LR
-    Client[Web or mobile client] --> Gateway[API Gateway :8080]
-    Gateway --> User[User Service :9020]
-    Gateway --> Posts[Post Service :9010]
-    Gateway --> Connections[Connections Service :9030]
 
-    Discovery[Discovery Server / Eureka :8761] -. service lookup .-> Gateway
-    Discovery -. service lookup .-> User
-    Discovery -. service lookup .-> Posts
-    Discovery -. service lookup .-> Connections
-    Discovery -. service lookup .-> Notifications
+    Client["Web / Mobile Client"] --> Gateway["API Gateway (8080)"]
 
-    User --> UserDB[(PostgreSQL userDB)]
-    Posts --> PostsDB[(PostgreSQL postsDB)]
-    Connections --> Graph[(Neo4j connections graph)]
-    Notifications --> NotificationDB[(PostgreSQL notificationDB)]
+    Gateway --> User["User Service (9020)"]
+    Gateway --> Posts["Post Service (9010)"]
+    Gateway --> Connections["Connections Service (9030)"]
 
-    Posts --> Kafka[(Apache Kafka)]
+    Discovery["Eureka Discovery Server (8761)"] -. "Service Discovery" .-> Gateway
+    Discovery -. "Service Discovery" .-> User
+    Discovery -. "Service Discovery" .-> Posts
+    Discovery -. "Service Discovery" .-> Connections
+    Discovery -. "Service Discovery" .-> Notifications
+
+    User --> UserDB[("PostgreSQL - userDB")]
+    Posts --> PostsDB[("PostgreSQL - postsDB")]
+    Connections --> GraphDB[("Neo4j Graph DB")]
+    Notifications --> NotificationDB[("PostgreSQL - notificationDB")]
+
+    Posts --> Kafka["Apache Kafka"]
     Connections --> Kafka
     Kafka --> Notifications
-    Notifications --> Connections
 ```
 
-### Request path
+---
 
-Clients should normally call the API Gateway rather than calling individual services directly. The gateway:
+# 🚀 What the Application Does
 
-1. Matches the public URL route.
-2. Uses Eureka to find the correct service instance.
-3. Checks JWT authentication for protected routes.
-4. Adds the authenticated user's ID to the `X-User-Id` request header.
-5. Forwards the request to the selected service.
+A typical user journey looks like this:
 
-User signup and login are public. Post and connection routes require a valid bearer token.
+| Step | Action |
+|------|--------|
+| 1 | User signs up. |
+| 2 | User logs in and receives a JWT token. |
+| 3 | Authenticated user creates posts. |
+| 4 | Users like/unlike posts. |
+| 5 | Users manage connection requests. |
+| 6 | Notification service generates notifications through Kafka events. |
 
-### Event path
+---
 
-Post and connection operations publish events to Kafka after their main work is completed. The notification service listens for those events and stores notification records. This keeps notification work separate from the request that caused it, so the post or connection service does not need to wait for notification persistence.
+# 🧩 Microservices
 
-## Services
+| Service | Responsibility | Database | Port |
+|----------|---------------|----------|------|
+| **API Gateway** | Routing, JWT validation, authentication filter | — | `8080` |
+| **Discovery Server** | Eureka service registry | — | `8761` |
+| **User Service** | Signup, login, user management, JWT generation | PostgreSQL | `9020` |
+| **Post Service** | Create/read posts and likes | PostgreSQL | `9010` |
+| **Connections Service** | Social graph and connection requests | Neo4j | `9030` |
+| **Notification Service** | Kafka consumer and notification storage | PostgreSQL | `9040` |
 
-| Service | Responsibility | Storage | Internal port |
-| --- | --- | --- | ---: |
-| `api-gateway` | Public entry point, routing, JWT validation, user ID propagation | None | `8080` |
-| `discovery-server` | Eureka service registry | None | `8761` |
-| `User-Service` | Signup, login, user records, JWT creation | PostgreSQL `userDB` | `9020` |
-| `post-Service` | Create and read posts, like and unlike posts | PostgreSQL `postsDB` | `9010` |
-| `connections-service` | Connection requests and first-degree connections | Neo4j | `9030` |
-| `notification-service` | Consume social events and save notifications | PostgreSQL `notificationDB` | `9040` |
+---
 
-Service names and folder names use slightly different capitalization in places. The logical service names are the names in the table above and in the Eureka configuration.
+# 🔀 Request Flow
 
-## Main API routes
-
-The examples below use the Docker Compose gateway address, `http://localhost:8083`. The gateway listens on port `8080` inside its container and is published as port `8083` on the host.
-
-### Authentication
-
-These routes do not require a token:
+Clients interact **only with the API Gateway**.
 
 ```text
-POST /api/v1/users/auth/signup
-POST /api/v1/users/auth/login
+Client
+   │
+   ▼
+API Gateway
+   │
+   ├── Validate JWT
+   ├── Extract User ID
+   ├── Add X-User-Id Header
+   ▼
+Target Microservice
 ```
 
-`/login` returns a JWT. Send it to protected routes as:
+Gateway responsibilities:
+
+- Route incoming requests.
+- Validate Bearer JWT.
+- Add authenticated user ID in `X-User-Id`.
+- Forward request using Eureka discovery.
+
+---
+
+# 📡 Event Flow (Kafka)
+
+```mermaid
+sequenceDiagram
+
+    participant User
+    participant PostService
+    participant Kafka
+    participant NotificationService
+    participant ConnectionService
+
+    User->>PostService: Create Post
+    PostService->>Kafka: Publish post-created-topic
+
+    Kafka->>NotificationService: Consume Event
+    NotificationService->>ConnectionService: Fetch First-Degree Connections
+    ConnectionService-->>NotificationService: Connected Users
+    NotificationService->>NotificationService: Store Notifications
+```
+
+The notification service performs all notification generation asynchronously.
+
+---
+
+# 🔐 Authentication Flow
+
+```mermaid
+sequenceDiagram
+
+    participant Client
+    participant Gateway
+    participant UserService
+
+    Client->>Gateway: Login Request
+    Gateway->>UserService: Forward Credentials
+    UserService-->>Gateway: JWT Token
+    Gateway-->>Client: JWT Token
+
+    Client->>Gateway: Protected Request + JWT
+    Gateway->>Gateway: Validate JWT
+    Gateway->>Gateway: Add X-User-Id Header
+    Gateway->>PostService: Forward Request
+```
+
+---
+
+# 📂 API Endpoints
+
+Base URL through Gateway:
 
 ```text
-Authorization: Bearer <token>
+http://localhost:8083
 ```
 
-### Posts
+---
 
-These routes require a JWT:
+## Authentication APIs
+
+| Method | Endpoint | Authentication |
+|--------|----------|----------------|
+| POST | `/api/v1/users/auth/signup` | ❌ |
+| POST | `/api/v1/users/auth/login` | ❌ |
+
+Login returns:
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+---
+
+## Posts APIs
+
+| Method | Endpoint |
+|--------|----------|
+| POST | `/api/v1/posts/core` |
+| GET | `/api/v1/posts/core/{postId}` |
+| GET | `/api/v1/posts/core/users/{userId}/allPosts` |
+| POST | `/api/v1/posts/likes/{postId}` |
+| DELETE | `/api/v1/posts/likes/{postId}` |
+
+Requires JWT.
+
+---
+
+## Connections APIs
+
+| Method | Endpoint |
+|--------|----------|
+| GET | `/api/v1/connections/core/{userId}/first-degree` |
+| POST | `/api/v1/connections/core/request/{userId}` |
+| POST | `/api/v1/connections/core/accept/{userId}` |
+| POST | `/api/v1/connections/core/reject/{userId}` |
+
+Requires JWT.
+
+---
+
+# ⚙️ Important Workflows
+
+## 1️⃣ Signup & Login
 
 ```text
-POST   /api/v1/posts/core                         Create a post
-GET    /api/v1/posts/core/{postId}                Get one post
-GET    /api/v1/posts/core/users/{userId}/allPosts Get all posts by a user
-POST   /api/v1/posts/likes/{postId}               Like a post
-DELETE /api/v1/posts/likes/{postId}               Unlike a post
+Client
+   │
+   ▼
+Gateway
+   │
+   ▼
+User Service
+   │
+   ├── Hash Password (BCrypt)
+   ├── Store User
+   └── Generate JWT
 ```
 
-### Connections
+---
 
-These routes require a JWT:
+## 2️⃣ Create a Post
 
 ```text
-GET  /api/v1/connections/core/{userId}/first-degree Get first-degree connections
-POST /api/v1/connections/core/request/{userId}      Send a connection request
-POST /api/v1/connections/core/accept/{userId}       Accept a connection request
-POST /api/v1/connections/core/reject/{userId}       Reject a connection request
+Client
+   │
+   ▼
+Gateway (JWT Validation)
+   │
+   ▼
+Post Service
+   │
+   ├── Save Post
+   └── Publish Kafka Event
+            │
+            ▼
+Notification Service
+            │
+            └── Notify Connections
 ```
 
-The notification service currently consumes events and stores notification records; it does not expose a gateway route for reading notifications.
+---
 
-## Important workflows
+## 3️⃣ Like a Post
 
-### 1. Signup and login
+```text
+Client
+   │
+   ▼
+Gateway
+   │
+   ▼
+Post Service
+   │
+   ├── Save Like
+   └── Publish post-liked-topic
+            │
+            ▼
+Notification Service
+            │
+            └── Notify Post Creator
+```
 
-1. The client sends signup or login credentials to the gateway.
-2. The gateway routes the request to `User-Service`.
-3. `User-Service` stores users in PostgreSQL and hashes passwords with BCrypt.
-4. On successful login, it creates a JWT containing the user ID.
-5. The client keeps the token and sends it with later protected requests.
+---
 
-### 2. Creating a post
+## 4️⃣ Connection Management
 
-1. The client sends `POST /api/v1/posts/core` with a bearer token.
-2. The gateway validates the token and adds `X-User-Id`.
-3. `post-Service` reads the user ID, stores the post in PostgreSQL, and returns the created post.
-4. `post-Service` publishes a `post-created-topic` event.
-5. `notification-service` consumes the event, asks `connections-service` for the creator's first-degree connections, and stores a notification for each connection.
+```text
+Client
+   │
+   ▼
+Connections Service
+   │
+   ├── Send Request
+   ├── Accept Request
+   └── Reject Request
+          │
+          ▼
+        Kafka
+          │
+          ▼
+Notification Service
+```
 
-### 3. Liking a post
+---
 
-1. The authenticated client sends `POST /api/v1/posts/likes/{postId}`.
-2. `post-Service` stores the like in PostgreSQL.
-3. It publishes a `post-liked-topic` event.
-4. `notification-service` consumes the event and stores a notification for the post creator.
+# 📬 Kafka Topics
 
-### 4. Managing connections
+| Topic | Producer | Consumer | Purpose |
+|--------|----------|----------|---------|
+| `post-created-topic` | Post Service | Notification Service | New post created |
+| `post-liked-topic` | Post Service | Notification Service | Post liked |
+| `send-connection-request-topic` | Connections Service | Notification Service | Connection request sent |
+| `accept-connection-request-topic` | Connections Service | Notification Service | Connection request accepted |
 
-1. The authenticated client sends a connection request, acceptance, or rejection to the gateway.
-2. `connections-service` updates the Neo4j relationship graph.
-3. For request and acceptance actions, it publishes the corresponding Kafka event.
-4. `notification-service` consumes the event and stores a notification for the relevant user.
+---
 
-## Kafka topics
+# 🗄️ Database Architecture
 
-| Topic | Published by | Consumed by | Meaning |
-| --- | --- | --- | --- |
-| `post-created-topic` | `post-Service` | `notification-service` | A user created a post |
-| `post-liked-topic` | `post-Service` | `notification-service` | A user liked a post |
-| `send-connection-request-topic` | `connections-service` | `notification-service` | A connection request was sent |
-| `accept-connection-request-topic` | `connections-service` | `notification-service` | A connection request was accepted |
+Sociofy follows the **Database per Service** pattern.
 
-The topics are configured with three partitions and one replica in the service code. The Docker Compose setup runs a single Kafka broker, so this is a development-oriented configuration.
+| Service | Database |
+|----------|----------|
+| User Service | PostgreSQL (`userDB`) |
+| Post Service | PostgreSQL (`postsDB`) |
+| Connections Service | Neo4j |
+| Notification Service | PostgreSQL (`notificationDB`) |
 
-## Data stores
+Benefits:
 
-Sociofy uses a database-per-service approach:
+- Independent schemas.
+- Loose coupling.
+- Better scalability.
+- Service autonomy.
 
-- **User PostgreSQL database**: user accounts and authentication data.
-- **Posts PostgreSQL database**: posts and post likes.
-- **Connections Neo4j database**: people and graph relationships between them.
-- **Notifications PostgreSQL database**: generated notification messages.
+---
 
-This separation means each service owns its data instead of sharing tables with another service. Cross-service information is obtained through REST/Feign calls or Kafka events.
+# 🛠️ Tech Stack
 
-## Technologies used
-
-### Application
+## Backend
 
 - Java 21
 - Spring Boot
-- Spring Web / Web MVC
+- Spring MVC
 - Spring Data JPA
 - Spring Data Neo4j
-- Maven
+- Spring Security
 - Lombok
 - ModelMapper
+- Maven
 
-### Microservices and security
+## Microservices
 
-- Spring Cloud Gateway for routing
-- Netflix Eureka for service discovery
-- Spring Cloud LoadBalancer for service-to-service routing
-- OpenFeign for declarative internal HTTP clients
-- JSON Web Tokens (JWT) for authentication
-- BCrypt for password hashing
-- Spring Boot Actuator for service monitoring endpoints
+- Spring Cloud Gateway
+- Netflix Eureka
+- Spring Cloud LoadBalancer
+- OpenFeign
+- JWT Authentication
+- BCrypt Password Encoding
 
-### Infrastructure
+## Infrastructure
 
-- Apache Kafka for asynchronous events
-- PostgreSQL 16 for relational data
-- Neo4j for connection relationships
-- Docker and Docker Compose for local orchestration
+- PostgreSQL 16
+- Neo4j
+- Apache Kafka
+- Docker
+- Docker Compose
 
-Most services use Spring Boot `3.2.5` and Spring Cloud `2023.0.3`. The notification service currently declares Spring Boot `4.0.5` and Spring Cloud `2025.1.1`, so dependency versions are not fully uniform across the repository.
+---
 
-## Running the project with Docker Compose
+# 📁 Repository Structure
 
-### Prerequisites
+```text
+Sociofy
+│
+├── api-gateway/              # Gateway & JWT Filter
+├── discovery-server/          # Eureka Registry
+├── User-Service/              # Authentication & Users
+├── post-Service/              # Posts & Likes
+├── connections-service/       # Social Graph
+├── notification-service/      # Kafka Consumers
+│
+└── docker-compose.yml         # Local Infrastructure
+```
 
-- Docker Desktop with Docker Compose
-- Ports available: `5432`, `5433`, `5434`, `7474`, `7687`, `8083`, `8761`, and `9092`
+Each service follows a standard Spring Boot project structure.
 
-### Start the infrastructure and services
+```text
+src
+├── controller
+├── service
+├── repository
+├── entity
+├── dto
+├── config
+├── security
+└── resources
+```
 
-From the repository root:
+---
+
+# 🐳 Running with Docker Compose
+
+## Prerequisites
+
+- Docker Desktop
+- Docker Compose
+
+Required ports:
+
+| Service | Port |
+|----------|------|
+| Gateway | `8083` |
+| Eureka | `8761` |
+| Kafka | `9092` |
+| Neo4j Browser | `7474` |
+| Neo4j Bolt | `7687` |
+| Notification DB | `5432` |
+| Posts DB | `5433` |
+| User DB | `5434` |
+
+---
+
+## Start Everything
 
 ```bash
 docker compose up -d
 ```
 
-The Compose file uses pre-built Docker images for the application services. To follow logs:
+View logs:
 
 ```bash
 docker compose logs -f api-gateway
 ```
 
-To stop the stack:
+Stop services:
 
 ```bash
 docker compose down
 ```
 
-To stop it and remove persisted development data:
+Remove volumes:
 
 ```bash
 docker compose down -v
 ```
 
-### Useful local addresses
+---
 
-| Component | Address |
-| --- | --- |
+# 🌍 Local URLs
+
+| Component | URL |
+|-----------|-----|
 | API Gateway | `http://localhost:8083` |
-| Eureka dashboard | `http://localhost:8761` |
+| Eureka Dashboard | `http://localhost:8761` |
 | Neo4j Browser | `http://localhost:7474` |
-| Kafka broker | `localhost:9092` |
-| User PostgreSQL | `localhost:5434` |
-| Posts PostgreSQL | `localhost:5433` |
-| Notifications PostgreSQL | `localhost:5432` |
+| Kafka Broker | `localhost:9092` |
 
-## Running a service directly with Maven
+---
 
-Each service is an independent Maven project. From a service directory, run:
+# 💻 Running Individual Services
+
+Move inside any service directory.
+
+### Linux / macOS
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-On Windows PowerShell, use:
+### Windows
 
 ```powershell
 .\mvnw.cmd spring-boot:run
 ```
 
-For a packaged build:
+Package service:
 
 ```powershell
 .\mvnw.cmd clean package
 ```
 
-When running services outside Docker, update the database, Kafka, and Eureka hostnames in the relevant `application.properties` or `application.yml` files. The checked-in configuration primarily uses Docker Compose service names such as `user-db`, `kafka`, and `discovery-server`.
+When running services without Docker, update:
 
-## Repository structure
+- PostgreSQL host
+- Kafka host
+- Eureka host
 
-```text
-Sociofy/
-├── api-gateway/          Public gateway and JWT filter
-├── discovery-server/     Eureka service registry
-├── User-Service/         Authentication and user management
-├── post-Service/         Posts and likes
-├── connections-service/  Social connection graph
-├── notification-service/ Event consumers and notifications
-└── docker-compose.yml    Local Kafka, databases, and service orchestration
-```
+inside `application.yml` or `application.properties`.
 
-Each service follows the usual Spring Boot structure with controllers, services, repositories, entities/DTOs, configuration, and tests.
+---
 
-## Current implementation notes
+# 🧪 Running Tests
 
-These are useful checks when extending or running the current repository:
-
-- `docker-compose.yml` configures the Neo4j password as `password`, while `connections-service` currently expects `00000000`. These values should be made consistent before connecting successfully.
-- The notification database credentials in Compose override the values in the notification service properties. Keep the two configurations aligned when changing environments.
-- The Feign clients for first-degree connections should be checked against the controller route. The controller expects `/core/{userId}/first-degree`, while the clients currently build `/core/first-degree` without the user ID path segment.
-- Several credentials and JWT secrets are currently stored directly in configuration files. For production, move them to environment variables or a secret manager.
-- Kafka is configured with one broker and one replica, which is suitable for local development but does not provide production fault tolerance.
-
-## Testing
-
-Each service contains a Maven test source tree. Run tests from the service directory with:
+Each service contains its own Maven test suite.
 
 ```powershell
 .\mvnw.cmd test
 ```
 
-Because the services use separate databases and infrastructure, integration tests may require PostgreSQL, Neo4j, Kafka, and Eureka to be running or replaced with test containers/mocks.
+Integration tests may require:
+
+- PostgreSQL
+- Neo4j
+- Kafka
+- Eureka
+
+or TestContainers/mocks.
+
+---
+
+# 📌 Current Development Notes
+
+> These are known configuration mismatches in the current repository.
+
+- Neo4j password in `docker-compose.yml` and `connections-service` should be identical.
+- Notification service database credentials should match Docker Compose configuration.
+- Feign client path for first-degree connections should match the controller mapping.
+- JWT secrets and database passwords should be moved to environment variables for production deployments.
+- Kafka is configured as a single broker for local development.
+
+---
+
+# 🎯 Design Highlights
+
+- API Gateway handles authentication and routing.
+- Eureka provides dynamic service discovery.
+- Kafka enables asynchronous event-driven communication.
+- PostgreSQL stores relational business data.
+- Neo4j manages user relationship graphs.
+- Notification Service is completely decoupled from user-facing requests.
+
+---
+
+# 👨‍💻 Author
+
+**Jayant Kumar**
+
+Backend Developer • Spring Boot • Microservices • Kafka • PostgreSQL • Neo4j
